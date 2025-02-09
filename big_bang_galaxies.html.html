@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Big Bang Simulation</title>
+  <style>
+    /* Celkový styl stránky */
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(ellipse at center, #0a0a0a 0%, #000000 100%);
+      font-family: sans-serif;
+    }
+    /* Kontejner pro tlačítka */
+    #controls {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+    }
+    button {
+      padding: 10px 20px;
+      margin-right: 10px;
+      border: none;
+      background-color: #0077cc;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #005fa3;
+    }
+  </style>
+</head>
+<body>
+  <!-- Ovládací tlačítka -->
+  <div id="controls">
+    <button id="startButton">Start</button>
+    <button id="resetButton">Reset</button>
+  </div>
+  
+  <!-- three.js se načítá z CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Globální proměnné
+    let scene, camera, renderer, particleSystem, particleGeometry, particleMaterial;
+    let clock, simulationRunning = false;
+    const particleCount = 10000;
+    const velocities = []; // Pole pro vektory rychlostí jednotlivých částic
+    let positions;         // Buffer obsahující pozice částic
+
+    // Inicializace scény
+    function init() {
+      // Scéna
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x000000);
+      // Přidáme jemný mlhový efekt
+      scene.fog = new THREE.FogExp2(0x000000, 0.00025);
+
+      // Kamera
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+      camera.position.z = 300;
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Uděláme responzivní renderování
+      window.addEventListener('resize', onWindowResize, false);
+
+      // Vytvoříme geometrii částic – všechny začínají v bodě (0,0,0)
+      particleGeometry = new THREE.BufferGeometry();
+      positions = new Float32Array(particleCount * 3);
+      for (let i = 0; i < particleCount; i++) {
+        positions[3 * i]     = 0;
+        positions[3 * i + 1] = 0;
+        positions[3 * i + 2] = 0;
+        // Inicializace rychlostí na nulový vektor
+        velocities.push(new THREE.Vector3(0, 0, 0));
+      }
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      // Materiál částic – s nastavením aditivního míchání pro kosmický efekt
+      particleMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 2,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      // Vytvoříme systém částic a přidáme jej do scény
+      particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+      scene.add(particleSystem);
+
+      // Hodiny pro delta time
+      clock = new THREE.Clock();
+
+      animate();
+    }
+
+    // Obsluha změny velikosti okna
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Funkce pro spuštění simulace (simuluje Big Bang)
+    function startSimulation() {
+      if (simulationRunning) return; // Pokud již simulace běží, nedělej nic
+      simulationRunning = true;
+      // Pro každou částici nastavíme náhodný směr (rovnoměrně rozložený na sféře)
+      for (let i = 0; i < particleCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        // Rychlost lze náhodně volit – čím vyšší, tím dál částice vyletí
+        const speed = 50 + Math.random() * 150; // hodnoty v jednotkách/sekundu
+        const vx = Math.sin(phi) * Math.cos(theta) * speed;
+        const vy = Math.sin(phi) * Math.sin(theta) * speed;
+        const vz = Math.cos(phi) * speed;
+        velocities[i].set(vx, vy, vz);
+      }
+    }
+
+    // Funkce pro reset simulace: vše se vrátí do počáteční singularity
+    function resetSimulation() {
+      simulationRunning = false;
+      // Všechny částice nastavíme zpět do středu
+      for (let i = 0; i < particleCount; i++) {
+        positions[3 * i]     = 0;
+        positions[3 * i + 1] = 0;
+        positions[3 * i + 2] = 0;
+        velocities[i].set(0, 0, 0);
+      }
+      particleGeometry.attributes.position.needsUpdate = true;
+    }
+
+    // Hlavní animační smyčka
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (simulationRunning) {
+        // Aktualizace pozic částic podle jejich rychlostí
+        for (let i = 0; i < particleCount; i++) {
+          positions[3 * i]     += velocities[i].x * delta;
+          positions[3 * i + 1] += velocities[i].y * delta;
+          positions[3 * i + 2] += velocities[i].z * delta;
+        }
+        particleGeometry.attributes.position.needsUpdate = true;
+      }
+
+      // Jemná rotace celého systému pro lepší vizuální dojem
+      particleSystem.rotation.y += 0.0005;
+      particleSystem.rotation.z += 0.0003;
+
+      renderer.render(scene, camera);
+    }
+
+    // Připojení obsluhy tlačítek
+    document.getElementById('startButton').addEventListener('click', startSimulation);
+    document.getElementById('resetButton').addEventListener('click', resetSimulation);
+
+    // Inicializace simulace
+    init();
+  </script>
+</body>
+</html>
