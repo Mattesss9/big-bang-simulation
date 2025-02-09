@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Simulace Big Bangu a expanze kosmu</title>
+  <!-- Načtení Babylon.js a Babylon GUI -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+  <!-- Načtení Cannon.js pro fyziku -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: black; }
+    canvas { width: 100%; height: 100%; display: block; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+    #controls button {
+      font-size: 16px;
+      padding: 8px 16px;
+      margin-right: 5px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Ovládací tlačítka -->
+  <div id="controls">
+    <button id="startButton">Start</button>
+    <button id="resetButton">Reset</button>
+  </div>
+  <canvas id="renderCanvas"></canvas>
+  <script>
+    // Globální proměnné
+    let simulationRunning = false;
+    let particleSystem = null; // Částicový systém pro simulaci Big Bangu
+    let singularity = null;    // Mesh reprezentující počáteční singularitu
+
+    // Inicializace Babylon.js engine a scény
+    const canvas = document.getElementById("renderCanvas");
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+    scene.clearColor = new BABYLON.Color4(0, 0, 0, 1); // Černé pozadí
+
+    // Zapnutí fyziky pomocí Cannon.js (bez globální gravitace)
+    scene.enablePhysics(new BABYLON.Vector3(0, 0, 0), new BABYLON.CannonJSPlugin());
+
+    // Vytvoření kamery – umožňuje volný pohyb kolem středu
+    const camera = new BABYLON.ArcRotateCamera("camera", Math.PI / 2, Math.PI / 3, 150, BABYLON.Vector3.Zero(), scene);
+    camera.attachControl(canvas, true);
+
+    // Přidání bodového světla
+    const light = new BABYLON.PointLight("light", new BABYLON.Vector3(0, 50, 0), scene);
+    light.intensity = 1.0;
+
+    // Nastavení bloom efektu pro zářící vzhled
+    const pipeline = new BABYLON.DefaultRenderingPipeline("pipeline", true, scene, [camera]);
+    pipeline.bloomEnabled = true;
+    pipeline.bloomThreshold = 0.8;
+    pipeline.bloomWeight = 0.3;
+    pipeline.bloomKernel = 64;
+    pipeline.bloomScale = 0.5;
+
+    // Vesmírná mlhovina: obrovský kulový objekt s texturou mlhoviny, který obklopuje celou scénu
+    const nebula = BABYLON.MeshBuilder.CreateSphere("nebula", { segments: 32, diameter: 2000 }, scene);
+    const nebulaMat = new BABYLON.StandardMaterial("nebulaMat", scene);
+    nebulaMat.diffuseTexture = new BABYLON.Texture("https://www.babylonjs-playground.com/textures/nebula.jpg", scene);
+    nebulaMat.diffuseTexture.hasAlpha = true;
+    nebulaMat.backFaceCulling = false;
+    nebulaMat.disableLighting = true;
+    nebula.material = nebulaMat;
+    nebula.position = BABYLON.Vector3.Zero();
+
+    // Funkce: Vytvoření počáteční singularity – extrémně jasný, pulsující bod
+    function createSingularity() {
+      singularity = BABYLON.MeshBuilder.CreateSphere("singularity", { diameter: 5 }, scene);
+      const singMat = new BABYLON.StandardMaterial("singMat", scene);
+      singMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+      singularity.material = singMat;
+      singularity.position = BABYLON.Vector3.Zero();
+
+      // Animace: rychlé zvětšení (pulsace) a následné mizení
+      const animScale = new BABYLON.Animation("scaleAnim", "scaling", 30, BABYLON.Animation.ANIMATIONTYPE_VECTOR3, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+      const scaleKeys = [];
+      scaleKeys.push({ frame: 0, value: new BABYLON.Vector3(1, 1, 1) });
+      scaleKeys.push({ frame: 30, value: new BABYLON.Vector3(50, 50, 50) });
+      animScale.setKeys(scaleKeys);
+      singularity.animations = [animScale];
+      scene.beginAnimation(singularity, 0, 30, false, 1, () => {
+        BABYLON.Animation.CreateAndStartAnimation("fadeOut", singularity, "visibility", 30, 30, 1, 0, false);
+        setTimeout(() => { singularity.dispose(); singularity = null; }, 1000);
+      });
+    }
+
+    // Funkce: Vytvoření částicového systému simulujícího Big Bang.
+    // Částice se rozpínají ze středu a zůstávají viditelné.
+    function createParticleSystem() {
+      particleSystem = new BABYLON.ParticleSystem("bbParticles", 20000, scene);
+      particleSystem.particleTexture = new BABYLON.Texture("https://www.babylonjs.com/assets/Flare.png", scene);
+      particleSystem.emitter = new BABYLON.Vector3(0, 0, 0);  // Emitor ve středu
+      particleSystem.minEmitBox = new BABYLON.Vector3(0, 0, 0);
+      particleSystem.maxEmitBox = new BABYLON.Vector3(0, 0, 0);
+      particleSystem.minSize = 3;
+      particleSystem.maxSize = 6;
+      // Nastavení extrémně dlouhé životnosti, aby částice pokračovaly v rozpínání
+      particleSystem.minLifeTime = 1000;
+      particleSystem.maxLifeTime = 2000;
+      particleSystem.emitRate = 20000;
+      particleSystem.blendMode = BABYLON.ParticleSystem.BLENDMODE_ADD;
+      particleSystem.direction1 = new BABYLON.Vector3(-1, -1, -1);
+      particleSystem.direction2 = new BABYLON.Vector3(1, 1, 1);
+      particleSystem.minEmitPower = 10;
+      particleSystem.maxEmitPower = 20;
+      particleSystem.gravity = new BABYLON.Vector3(0, 0, 0);
+      particleSystem.updateSpeed = 0.005;
+      // Částice se budou neustále vypisovat a rozpínat
+      particleSystem.start();
+    }
+
+    // Animace kamery: pomalé otáčení a postupné vzdaluje od středu (efekt natočeného videa)
+    scene.onBeforeRenderObservable.add(() => {
+      if (simulationRunning) {
+        camera.radius += 0.02;
+        camera.alpha += 0.0005;
+      }
+    });
+
+    // Funkce: Spuštění simulace – vytvoří singularitu a částicový systém až po stisknutí tlačítka Start
+    function startSimulation() {
+      if (simulationRunning) return;
+      simulationRunning = true;
+      createSingularity();
+      createParticleSystem();
+    }
+
+    // Funkce: Reset simulace – odstraní všechny vytvořené objekty a vrátí scénu do počátečního stavu
+    function resetSimulation() {
+      simulationRunning = false;
+      if (particleSystem) { particleSystem.dispose(); particleSystem = null; }
+      if (singularity) { singularity.dispose(); singularity = null; }
+      // Reset kamery
+      camera.alpha = Math.PI / 2;
+      camera.beta = Math.PI / 3;
+      camera.radius = 150;
+    }
+
+    // Připojení tlačítek
+    document.getElementById("startButton").addEventListener("click", startSimulation);
+    document.getElementById("resetButton").addEventListener("click", resetSimulation);
+
+    // Renderovací smyčka
+    engine.runRenderLoop(() => {
+      scene.render();
+    });
+
+    window.addEventListener("resize", () => {
+      engine.resize();
+    });
+  </script>
+</body>
+</html>
